@@ -1,0 +1,36 @@
+---
+# proxmox and proxmox_kvm options
+api_user: 'root@pam'
+api_password: '{{ vault_api_password }}'
+api_host: '192.168.1.200'
+defaults:
+  vm_template: 'KubernetesTemplate'
+  node: 'proxmox1'
+  storage:
+    ct: 'local-lvm'
+  pubkey: "{{ lookup('file', '~/.ssh/id_rsa.pub') }}"
+  nameserver: '192.168.1.254'
+  ostemplate:  'local:900/base-900-disk-1.vmdk' 
+  net0: 'virtio,bridge=vmbr0,firewall=1'
+  password: '{{ vault_testkube_password }}'
+  nameservers: 
+    - 192.168.1.254
+    - 1.1.1.1
+    - 8.8.8.8
+
+cts:
+  kube1:
+    vmid: '201'
+    hostname: 'testkube1.longhorse.local'
+    name: 'testkube1'
+    ip: 192.168.1.211
+  kube2:
+    vmid: '202'
+    hostname: 'testkube2.longhorse.local'
+    name: 'testkube2'
+    ip: 192.168.1.212
+  kube3:
+    vmid: '203'
+    hostname: 'testkube3.longhorse.local'
+    name: 'testkube3'
+    ip: 192.168.1.213
