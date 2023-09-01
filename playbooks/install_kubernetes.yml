@@ -1,0 +1,9 @@
+---
+
+- name: install kubernetes on test kube nodes
+
+  hosts: testkubemasternodes:testkubeworkernodes
+  gather_facts: false
+
+  roles:
+    - kubernetes

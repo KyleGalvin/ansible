@@ -1,0 +1,183 @@
+
+#
+#   Update the system. This one is a no-brainer.
+#   We want security updates, and the latest packages.
+#
+- name: Apt update
+  become: yes
+  apt:
+    update_cache: yes
+
+- name: Apt upgrade
+  become: yes
+  apt:
+    upgrade: yes
+
+#
+#   Install any general packages not included in the base image we will need.
+#
+- name: Install gpg for apt key signing
+  become: yes
+  apt: 
+    name: "{{ packages }}"
+    state: present
+    update_cache: yes
+  vars:
+    packages:
+      - gpg
+
+#
+#   Operating system level preparations
+#   Disable swap. Without this, kubernetes will have stability issues
+#   Add iptables kernel module
+#
+- name: Remove swapfile from /etc/fstab
+  mount:
+    name: "{{ item }}"
+    fstype: swap
+    state: absent
+  with_items:
+    - swap
+    - none
+
+- name: Disable swap
+  become: yes
+  command: swapoff -a
+
+- name: Add kernel module for iptables
+  become: yes
+  command: modprobe br_netfilter
+
+- name: Enable kernel module for iptables
+  become: yes
+  shell: sudo -u root bash -c "echo 1 > /proc/sys/net/ipv4/ip_forward"
+
+#
+#   Install and start containerd packages. No docker included here.
+#
+- name: Install containerd and its dependecies
+  become: yes
+  apt: 
+    name: "{{ packages }}"
+    state: present
+    update_cache: yes
+  vars:
+    packages:
+    - containerd
+
+- name: Start containerd
+  systemd:
+    name: containerd
+    state: started
+    enabled: true
+
+- name: Fix containerd cgroups in debian bullseye
+  become: yes
+  ansible.builtin.blockinfile: 
+    path: /etc/containerd/config.toml
+    block: | 
+      version = 2
+      [plugins]
+        [plugins."io.containerd.grpc.v1.cri"]
+        [plugins."io.containerd.grpc.v1.cri".containerd]
+            [plugins."io.containerd.grpc.v1.cri".containerd.runtimes]
+              [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+                runtime_type = "io.containerd.runc.v2"
+                [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
+                  SystemdCgroup = true
+
+#
+#   Install main kubernetes packages from the kubernetes package repository.
+#
+- name: Add an apt signing key for Kubernetes
+  become: yes
+  apt_key:
+    url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
+    state: present
+
+- name: Adding apt repository for Kubernetes
+  become: yes
+  apt_repository:
+    repo: deb https://apt.kubernetes.io/ kubernetes-xenial main
+    state: present
+    filename: kubernetes.list
+
+- name: Install Kubernetes binaries
+  become: yes
+  apt: 
+    name: "{{ packages }}"
+    state: present
+    update_cache: yes
+  vars:
+    packages:
+      - kubelet 
+      - kubeadm 
+      - kubectl
+
+#
+#   Prepare and initialize kubernetes. Join the child nodes.
+#
+- name: Configure node ip
+  when: inventory_hostname in groups['testkubemasternodes']
+  become: yes
+  lineinfile:
+    path: /etc/systemd/system/kubelet.service.d/10-kubeadm.conf
+    line: KUBELET_EXTRA_ARGS=--node-ip=192.168.1.211
+    
+- name: Restart kubelet service
+  become: yes
+  ansible.builtin.systemd:
+    state: restarted
+    daemon_reload: true
+    name: kubelet
+
+- name: Reset any past kubeadm initialization
+  become: yes
+  command: kubeadm reset --force
+
+- name: Initialize the Kubernetes cluster using kubeadm
+  become: yes
+  when: inventory_hostname in groups['testkubemasternodes']
+  command: kubeadm init --apiserver-advertise-address="192.168.1.211" --apiserver-cert-extra-sans="192.168.1.211"  --node-name testkube1 --pod-network-cidr=192.168.0.0/16
+
+- name: move kubectl file to home
+  when: inventory_hostname in groups['testkubemasternodes'] 
+  become: yes
+  shell: |
+    mkdir -p ~/.kube && cp /etc/kubernetes/admin.conf ~/.kube/config
+  args:
+    executable: /usr/bin/bash
+  register: result
+
+- name: Generate join command
+  become: yes
+  when: inventory_hostname in groups['testkubemasternodes']
+  command: kubeadm token create --print-join-command
+  register: join_command
+
+#- name: "Ansible | Print a variable"
+#  debug:
+#    msg: "The join command is {{ join_command }}"
+
+- name: Copy join command to local file
+  when: inventory_hostname in groups['testkubemasternodes']
+  local_action: copy content="{{ join_command.stdout_lines[0] }}" dest="./join_command"
+
+- name: Copy the join command to server location
+  when: inventory_hostname in groups['testkubeworkernodes']
+  copy: src=join_command dest=/tmp/join_command.sh mode=0777
+
+- name: Install calico
+  when: inventory_hostname in groups['testkubemasternodes']
+  become: true
+  command: kubectl create -f https://docs.projectcalico.org/manifests/calico.yaml
+
+- name: Install metallb
+  when: inventory_hostname in groups['testkubemasternodes']
+  become: true
+  command: kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.13.10/config/manifests/metallb-native.yaml
+
+- name: Join worker nodes
+  become: yes
+  when: inventory_hostname in groups['testkubeworkernodes']
+  command: sh /tmp/join_command.sh

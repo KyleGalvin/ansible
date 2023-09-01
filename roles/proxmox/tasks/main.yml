@@ -20,8 +20,8 @@
     - sleep
   register: 'created_cts_pve'
 
-- name: Run shell script to set up static IP addresses on all hosts
-  ansible.builtin.script: ./scripts/static_ip.sh
+- name: Run shell script to set up static IP addresses and ssh keys on all hosts
+  ansible.builtin.script: ./scripts/static_ip.sh '{{ lookup('file', '~/.ssh/id_rsa.pub') }}'
 
 - name: start testkube vms
   tags: proxmox, create, deploy

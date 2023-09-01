@@ -4,7 +4,7 @@ api_user: 'root@pam'
 api_password: '{{ vault_api_password }}'
 api_host: '192.168.1.200'
 defaults:
-  vm_template: 'KubernetesTemplate'
+  vm_template: 'Ubuntu22Cloud'
   node: 'proxmox1'
   storage:
     ct: 'local-lvm'
