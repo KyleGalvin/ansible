@@ -143,9 +143,9 @@
     update_cache: yes
   vars:
     packages:
-      - kubelet=1.20.1-00
-      - kubeadm=1.20.1-00
-      - kubectl=1.20.1-00 
+      - kubelet=1.28.1-00
+      - kubeadm=1.28.1-00
+      - kubectl=1.28.1-00
 
 - name: Prevent packages from being upgraded
   become: yes
@@ -195,6 +195,16 @@
   when: inventory_hostname in groups['testkubemasternodes']
   command: cp /etc/kubernetes/admin.conf /home/kube/.kube/config
 
+- name: set owner of kube config
+  become: yes
+  when: inventory_hostname in groups['testkubemasternodes']
+  command: chown kube /home/kube/.kube/config
+
+- name: set group of kube config
+  become: yes
+  when: inventory_hostname in groups['testkubemasternodes']
+  command: chgrp kube /home/kube/.kube/config
+
 - name: copy kube config to ansible host
   become: yes
   when: inventory_hostname in groups['testkubemasternodes']
@@ -202,13 +212,7 @@
 
 - name: Install flannel
   when: inventory_hostname in groups['testkubemasternodes']
-  become: true
   command: kubectl apply -f https://github.com/flannel-io/flannel/releases/latest/download/kube-flannel.yml
-
-- name: Install metallb
-  when: inventory_hostname in groups['testkubemasternodes']
-  become: true
-  command: kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.13.10/config/manifests/metallb-native.yaml
 
 - name: Generate join command
   become: yes
@@ -228,3 +232,11 @@
   become: yes
   when: inventory_hostname in groups['testkubeworkernodes']
   command: sh /tmp/join_command.sh
+
+- name: Wait for all k8s nodes to be ready
+  when: inventory_hostname in groups['testkubemasternodes']
+  shell: kubectl wait --for=condition=Ready nodes --all --timeout=600s
+
+- name: Install metallb
+  when: inventory_hostname in groups['testkubemasternodes']
+  command: kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.13.10/config/manifests/metallb-native.yaml
