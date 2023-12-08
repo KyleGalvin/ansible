@@ -1,9 +1,15 @@
 [proxmox1]
-proxmox1 ansible_ssh_host=192.168.1.200 ansible_user=root
+proxmox1 ansible_ssh_host=192.168.1.111 ansible_user=root
+
+[proxmox2]
+proxmox2 ansible_ssh_host=192.168.1.112 ansible_user=root
 
 [testkubemasternodes]
-testkube1 ansible_ssh_host=192.168.1.211 ansible_user=kube
+testkube1 ansible_ssh_host=192.168.100.211 ansible_user=kube
 
 [testkubeworkernodes]
-testkube2 ansible_ssh_host=192.168.1.212 ansible_user=kube
-testkube3 ansible_ssh_host=192.168.1.213 ansible_user=kube
+testkube2 ansible_ssh_host=192.168.100.212 ansible_user=kube
+testkube3 ansible_ssh_host=192.168.100.213 ansible_user=kube
+
+[netapps]
+netapps ansible_ssh_host=192.168.1.101 ansible_user=kube

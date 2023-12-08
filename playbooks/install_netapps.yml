@@ -1,0 +1,9 @@
+---
+
+- name: install network applications on netapps host
+
+  hosts: netapps
+  gather_facts: false
+
+  roles:
+    - netapps

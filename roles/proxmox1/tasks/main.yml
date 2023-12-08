@@ -11,6 +11,9 @@
     clone: '{{ item.value.vm_template | default(defaults.vm_template)}}'
     cipassword: '{{ item.value.password | default(defaults.password) }}'
     citype: "nocloud"
+    net:
+      net0:
+         '{{ item.value.net0 | default(defaults.net0) }}'
     newid: '{{ item.value.vmid | default(defaults.vmid) }}'
     state: present
   with_dict: "{{ cts }}"
@@ -21,7 +24,7 @@
   register: 'created_cts_pve'
 
 - name: Run shell script to set up static IP addresses and ssh keys on all hosts
-  ansible.builtin.script: ./scripts/static_ip.sh '{{ lookup('file', '~/.ssh/id_rsa.pub') }}'
+  ansible.builtin.script: ./scripts/static_ip.sh
 
 - name: start testkube vms
   tags: proxmox, create, deploy

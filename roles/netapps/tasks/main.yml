@@ -1,0 +1,93 @@
+
+#
+# upgrade the cloud image
+#
+
+- name: Apt update
+  become: yes
+  apt:
+    update_cache: yes
+
+- name: Apt upgrade
+  become: yes
+  apt:
+    upgrade: yes
+
+#
+# install prerequisite packages
+#
+- name: Install nfs packages
+  become: yes
+  apt: 
+    name: "{{ packages }}"
+    state: present
+    update_cache: yes
+  vars:
+    packages:
+      - nfs-common
+
+# mount network filesystem
+- name: make shared folder mount point
+  become: yes
+  command: mkdir -p /mnt/sharedSystem
+
+- name: mount nfs drive
+  become: yes
+  command: mount 192.168.1.102:/mnt/DataPool/sharedSystem /mnt/sharedSystem
+
+- name: add nfs drive to fstab for automount on boot
+  become: yes
+  ansible.builtin.blockinfile:
+    path: /etc/fstab
+    block: |
+      192.168.1.102:/mnt/DataPool/sharedSystem /mnt/sharedSystem nfs auto,nofail,noatime,nolockintr,tcp,actimeo=1800 0 0
+
+# install docker compose
+- name: download docker gpg key
+  become: yes
+  command: curl -L https://download.docker.com/linux/ubuntu/gpg -o ~/dockerkey
+
+- name: install docker gpg dockerkey
+  become: yes
+  command: apt-key add ~/dockerkey
+
+- name: add docker repository
+  become: yes
+  command: add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu focal stable" -y
+
+- name: choose default repo
+  become: yes
+  command: apt-cache policy docker-ce
+
+- name: Install docker packages
+  become: yes
+  apt:
+    name: "{{ packages }}"
+    state: present
+    update_cache: yes
+  vars:
+    packages:
+      - docker-ce
+      - docker-compose
+
+# pull docker images
+- name: change directory
+  command: cd /mnt/sharedSystem/longhorse/netapps/
+
+- name: start docker compose
+  become: yes
+  command: docker-compose pull
+
+#disable systemd-resolve
+- name: disble systemd-resolve
+  become: yes
+  command: systemctl disable systemd-resolved.service
+
+- name: stop systemd-resolve
+  become: yes
+  command: systemctl stop systemd-resolved
+
+# start the apps
+- name: start docker compose
+  become: yes
+  command: docker-compose up -d

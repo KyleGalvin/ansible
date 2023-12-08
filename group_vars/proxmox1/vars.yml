@@ -2,16 +2,16 @@
 # proxmox and proxmox_kvm options
 api_user: 'root@pam'
 api_password: '{{ vault_api_password }}'
-api_host: '192.168.1.200'
+api_host: '192.168.1.111'
 defaults:
-  vm_template: 'Ubuntu22Cloud'
+  vm_template: 'UbuntuCloud'
   node: 'proxmox1'
   storage:
     ct: 'local-lvm'
   pubkey: "{{ lookup('file', '~/.ssh/id_rsa.pub') }}"
   nameserver: '192.168.1.254'
   ostemplate:  'local:900/base-900-disk-1.vmdk' 
-  net0: 'virtio,bridge=vmbr0,firewall=1'
+  net0: 'virtio,bridge=vmbr0'
   password: '{{ vault_testkube_password }}'
   nameservers: 
     - 192.168.1.254
@@ -19,18 +19,15 @@ defaults:
     - 8.8.8.8
 
 cts:
-  kube1:
-    vmid: '201'
-    hostname: 'testkube1.longhorse.local'
-    name: 'testkube1'
-    ip: 192.168.1.211
-  kube2:
-    vmid: '202'
-    hostname: 'testkube2.longhorse.local'
-    name: 'testkube2'
-    ip: 192.168.1.212
-  kube3:
-    vmid: '203'
-    hostname: 'testkube3.longhorse.local'
-    name: 'testkube3'
-    ip: 192.168.1.213
+  netapps:
+    vmid: '101'
+    hostname: 'netapps.longhorse.local'
+    name: 'netapps'
+    net0: 'virtio,bridge=vmbr0,firewall=1'
+    ip: 192.168.1.101
+  database:
+    vmid: '104'
+    hostname: 'database.longhorse.local'
+    name: 'database'
+    net0: 'virtio,bridge=vmbr1,firewall=1'
+    ip: 192.168.100.104

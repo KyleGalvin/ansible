@@ -1,0 +1,38 @@
+
+- name: create testkube vms
+  tags: proxmox, create, deploy
+  proxmox_kvm:
+    api_user: "{{ api_user }}"
+    api_password: "{{ api_password }}"
+    api_host: "{{ api_host }}"
+    full: true
+    name: '{{ item.value.name }}'
+    node: '{{ item.value.node | default(defaults.node) }}'
+    target:  '{{ item.value.target | default(defaults.target) }}'
+    clone: '{{ item.value.vm_template | default(defaults.vm_template)}}'
+    cipassword: '{{ item.value.password | default(defaults.password) }}'
+    citype: "nocloud"
+    newid: '{{ item.value.newid | default(defaults.newid) }}'
+    state: present
+  with_dict: "{{ cts }}"
+  loop_control:
+    pause: 2
+  notify:
+    - sleep
+  register: 'created_cts_pve'
+
+- name: Run shell script to set up static IP addresses and ssh keys on all hosts
+  ansible.builtin.script: ./scripts/static_ip.sh
+
+- name: start testkube vms
+  tags: proxmox, create, deploy
+  proxmox_kvm:
+    api_user: "{{ api_user }}"
+    api_password: "{{ api_password }}"
+    api_host: "{{ api_host }}"
+    name: '{{ item.value.name }}'
+    node: '{{ item.value.node | default(defaults.node) }}'
+    state: started
+  with_dict: "{{ cts }}"
+  notify:
+    - sleep

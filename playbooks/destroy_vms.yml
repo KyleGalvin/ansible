@@ -23,7 +23,7 @@
       pause:
         seconds: 10
 
-    - name: stop testkube vms
+    - name: delete testkube vms
       tags: proxmox, create, deploy
       proxmox_kvm:
         api_user: "{{ api_user }}"

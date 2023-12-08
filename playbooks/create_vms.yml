@@ -1,9 +1,3 @@
 ---
-# creates and starts containers from container vars with host vars defaults
-- name: deploy virtual machines for test kube environment
-
-  hosts: proxmox1
-  gather_facts: false
-
-  roles:
-    - proxmox
+- import_playbook: create_proxmox1_vms.yml
+- import_playbook: create_proxmox2_vms.yml

@@ -1,8 +1,8 @@
 
 #
-#   Update the system. This one is a no-brainer.
-#   We want security updates, and the latest packages.
+# upgrade the cloud image
 #
+
 - name: Apt update
   become: yes
   apt:
@@ -14,7 +14,7 @@
     upgrade: yes
 
 #
-#   Install any general packages not included in the base image we will need.
+# install prerequisite packages
 #
 - name: Install utility packages
   become: yes
@@ -24,207 +24,126 @@
     update_cache: yes
   vars:
     packages:
-      - apt-transport-https
-      - ca-certificates
-      - curl
-      - gnupg-agent
-      - software-properties-common
+      - nfs-common
 
 #
-#   Operating system level preparations
-#   Disable swap. Without this, kubernetes will have stability issues
-#   Add iptables kernel module
+# install microk8s
 #
-- name: Disable swap
+
+- name: install microk8s
   become: yes
-  command: swapoff -a
+  command: snap install microk8s --classic --channel=1.27/stable
 
-- name: disable swap in fstab
+- name: add user kube to microk8s group
   become: yes
-  replace:
-    path: /etc/fstab
-    regexp: '^([^#].*?\sswap\s+sw\s+.*)$'
-    replace: '# \1'
+  command: usermod -a -G microk8s kube
 
-- name: Create containerd config file
+- name: make kubernetes configuration directory
   become: yes
-  file:
-    path: "/etc/modules-load.d/containerd.conf"
-    state: "touch"
+  command: mkdir -p ~/.kube
 
-- name: Add conf for containerd
+- name: set permissions for the kubernetes configuration directory
   become: yes
-  blockinfile:
-    path: "/etc/modules-load.d/containerd.conf"
-    block: |
-          overlay
-          br_netfilter
+  command: chown -R kube ~/.kube
 
-- name: enable overlay kernel module
+#
+# configure firewall so pods can access each other and the outside net
+#
+
+- name: configure incoming firewall traffic
   become: yes
-  command: modprobe overlay
+  command: ufw allow in on cni0
 
-- name: enable br_netfilter kernel module
+- name: configure outgoing firewall traffic
   become: yes
-  command: modprobe br_netfilter
+  command: ufw allow out on cni0
 
-
-- name: Set system configurations for Kubernetes networking'
+- name: firewall permissive routing
   become: yes
-  file:
-    path: "/etc/sysctl.d/99-kubernetes-cri.conf"
-    state: "touch"
+  command: ufw default allow routed
 
-- name: ensure iptables enabled
+#
+# enable microk8s modules
+#
+
+- name: microk8s enable dns
+  become: yes
+  command: microk8s enable dns 
+
+- name: microk8s enable dashboard
+  become: yes
+  command: microk8s enable dashboard 
+
+- name: microk8s enable hostpath-storage
+  become: yes
+  command: microk8s enable hostpath-storage 
+
+#
+# add nodes to host file
+#
+
+- name: Add hosts to hosts cloud template file
   become: yes
   ansible.builtin.blockinfile: 
-    path: /etc/sysctl.d/99-kubernetes-cri.conf
-    block: | 
-      net.bridge.bridge-nf-call-ip6tables = 1
-      net.ipv4.ip_forward = 1
-      net.bridge.bridge-nf-call-iptables = 1
+    path: /etc/cloud/templates/hosts.debian.tmpl
+    block: |
+      192.168.1.211 testkube1 
+      192.168.1.212 testkube2 
+      192.168.1.213 testkube3 
 
-- name: Apply new settings
+- name: Add hosts to /etc/hosts file
   become: yes
-  command: sysctl --system
+  ansible.builtin.blockinfile: 
+    path: /etc/hosts
+    block: |
+      192.168.100.211 testkube1
+      192.168.100.212 testkube2
+      192.168.100.213 testkube3
+
+#- name: microk8s enable storage
+#  when: inventory_hostname in groups['testkubemasternodes']
+#  become: yes
+#  command: microk8s enable storage 
+
+- name: microk8s enable ingress
+  become: yes
+  command: microk8s enable ingress 
+
+#- name: microk8s enable gpu
+#  when: inventory_hostname in groups['testkubemasternodes']
+#  become: yes
+#  command: microk8s enable gpu 
+
+#- name: microk8s enable istio
+#  when: inventory_hostname in groups['testkubemasternodes']
+#  become: yes
+#  command: microk8s enable istio 
+
+#- name: microk8s enable registry
+#  when: inventory_hostname in groups['testkubemasternodes']
+#  become: yes
+#  command: microk8s enable registry 
 
 #
-#   Install and start containerd packages. No docker included here.
+# Join cluster nodes
 #
-- name: Install containerd and its dependecies
-  become: yes
-  apt: 
-    name: "{{ packages }}"
-    state: present
-    update_cache: yes
-  vars:
-    packages:
-    - containerd
 
-- name: create containerd conf directory
-  become: yes
-  command: mkdir -p /etc/containerd
-
-- name: create containerd conf file
-  become: yes
-  command: containerd config default | tee /etc/containerd/config.toml
-            
-- name: reload systemd
-  systemd:
-    daemon_reload: yes
-  become: yes
-
-- name: Start containerd
-  systemd:
-    name: containerd
-    enabled: true
-
-#
-#   Install main kubernetes packages from the kubernetes package repository.
-#
-- name: Add an apt signing key for Kubernetes
-  become: yes
-  apt_key:
-    url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
-    state: present
-
-- name: Adding apt repository for Kubernetes
-  become: yes
-  apt_repository:
-    repo: deb https://apt.kubernetes.io/ kubernetes-xenial main
-    state: present
-    filename: kubernetes.list
-
-- name: Install Kubernetes binaries
-  become: yes
-  apt: 
-    name: "{{ packages }}"
-    state: present
-    update_cache: yes
-  vars:
-    packages:
-      - kubelet=1.28.1-00
-      - kubeadm=1.28.1-00
-      - kubectl=1.28.1-00
-
-- name: Prevent packages from being upgraded
-  become: yes
-  command: sudo apt-mark hold kubelet kubeadm kubectl
-
-#
-#   Prepare and initialize kubernetes. Join the child nodes.
-#
-- name: Configure node ip
-  when: inventory_hostname in groups['testkubemasternodes']
-  become: yes
-  lineinfile:
-    path: /etc/systemd/system/kubelet.service.d/10-kubeadm.conf
-    line: KUBELET_EXTRA_ARGS=--node-ip=192.168.1.211
-    
-- name: Restart kubelet service
-  become: yes
-  ansible.builtin.systemd:
-    state: restarted
-    daemon_reload: true
-    name: kubelet
-
-- name: Reset any past kubeadm initialization
-  become: yes
-  command: kubeadm reset --force
-
-- name: Initialize the Kubernetes cluster using kubeadm
+- name: create join token
   become: yes
   when: inventory_hostname in groups['testkubemasternodes']
-  command: kubeadm init --node-name testkube1 --pod-network-cidr=10.244.0.0/16
-
-- name: create root kube directory
-  become: yes
-  command: mkdir -p ~/.kube
-
-- name: create user kube directory
-  when: inventory_hostname in groups['testkubemasternodes']
-  command: mkdir -p ~/.kube
-
-- name: Copy kube config to root home directory
-  become: yes
-  when: inventory_hostname in groups['testkubemasternodes']
-  command: cp /etc/kubernetes/admin.conf /root/.kube/config
-
-- name: Copy kube config to user home directory
-  become: yes
-  when: inventory_hostname in groups['testkubemasternodes']
-  command: cp /etc/kubernetes/admin.conf /home/kube/.kube/config
-
-- name: set owner of kube config
-  become: yes
-  when: inventory_hostname in groups['testkubemasternodes']
-  command: chown kube /home/kube/.kube/config
-
-- name: set group of kube config
-  become: yes
-  when: inventory_hostname in groups['testkubemasternodes']
-  command: chgrp kube /home/kube/.kube/config
-
-- name: copy kube config to ansible host
-  become: yes
-  when: inventory_hostname in groups['testkubemasternodes']
-  copy: src=/etc/kubernetes/admin.conf dest=~/.kube/config mode=0777 remote_src=yes
-
-- name: Install flannel
-  when: inventory_hostname in groups['testkubemasternodes']
-  command: kubectl apply -f https://github.com/flannel-io/flannel/releases/latest/download/kube-flannel.yml
-
-- name: Generate join command
-  become: yes
-  when: inventory_hostname in groups['testkubemasternodes']
-  command: kubeadm token create --print-join-command
+  command:  microk8s add-node --format short --token-ttl 3600
   register: join_command
+
+- name: Print return information from the previous task
+  ansible.builtin.debug:
+    var: join_command.stdout_lines[0]
 
 - name: Copy join command to local file
   when: inventory_hostname in groups['testkubemasternodes']
   local_action: copy content="{{ join_command.stdout_lines[0] }}" dest="./join_command"
 
 - name: Copy the join command to server location
+  become: yes
   when: inventory_hostname in groups['testkubeworkernodes']
   copy: src=join_command dest=/tmp/join_command.sh mode=0777
 
@@ -233,10 +152,20 @@
   when: inventory_hostname in groups['testkubeworkernodes']
   command: sh /tmp/join_command.sh
 
-- name: Wait for all k8s nodes to be ready
+- name: Fetch kubeconfig
+  become: yes
   when: inventory_hostname in groups['testkubemasternodes']
-  shell: kubectl wait --for=condition=Ready nodes --all --timeout=600s
+  command: |
+    microk8s config > /tmp/kubeconfig
 
-- name: Install metallb
+- name: copy kube config to ansible host
+  become: yes
   when: inventory_hostname in groups['testkubemasternodes']
-  command: kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.13.10/config/manifests/metallb-native.yaml
+  copy: src=/tmp/kubeconfig dest=./kubeconfig mode=0777 remote_src=yes
+#- name: Wait for all k8s nodes to be ready
+#  when: inventory_hostname in groups['testkubemasternodes']
+#  shell: kubectl wait --for=condition=Ready nodes --all --timeout=600s
+
+#- name: Install metallb
+#  when: inventory_hostname in groups['testkubemasternodes']
+#  command: kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.13.10/config/manifests/metallb-native.yaml
